@@ -21,17 +21,22 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.Toast;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 
-import static android.Manifest.permission.SYSTEM_ALERT_WINDOW;
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
 import static android.Manifest.permission.READ_PHONE_STATE;
 
 public class MainActivity extends AppCompatActivity {
-    private static final int PERMISSION_REQUEST_CODE = 200;
+
+    //fields to take care of the permissions
+    private static final int RES_PERMISSION_REQUEST_CODE = 200;
+    private static final int RPS_PERMISSION_REQUEST_CODE = 201;
+
+    //fields to play audio
+    public static final String Broadcast_PLAY_NEW_AUDIO = "playdhun.application.com.playdhun.PlayNewAudio";
     private MediaPlayerService player;
     boolean serviceBound = false;
+
     //to store the local audio files
     ArrayList<Audio> audioFiles;
 
@@ -49,26 +54,35 @@ public class MainActivity extends AppCompatActivity {
             serviceBound = false;
         }
     };
-    private void playAudio(String media) {
+
+    /*
+     * This function is used to play the media form any index
+     */
+    private void playAudio(int index) {
         if(!serviceBound){
-            Intent playerIntent = new Intent(this, MediaPlayerService.class);
-            playerIntent.putExtra("media", media);
-            startService(playerIntent);
-            bindService(playerIntent, serviceConnection, Context.BIND_AUTO_CREATE);
+            StorageUtil storageUtil = new StorageUtil(getApplicationContext());
+            storageUtil.storeAudio(audioFiles);
+            storageUtil.storeAudioIndex(index);
+            Intent intent = new Intent(this, MediaPlayerService.class);
+            startService(intent);
+            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
         }
         else{
-
+            StorageUtil storageUtil = new StorageUtil(getApplicationContext());
+            storageUtil.storeAudioIndex(index);
+            Intent intent = new Intent(Broadcast_PLAY_NEW_AUDIO);
+            sendBroadcast(intent);
         }
     }
 
     private void checkForPermissions(){
-        int sawPermissionGranted = ContextCompat.checkSelfPermission(getApplicationContext(), SYSTEM_ALERT_WINDOW);
         int resPermissionGranted = ContextCompat.checkSelfPermission(getApplicationContext(), READ_EXTERNAL_STORAGE);
         int rpsPermissionGranted = ContextCompat.checkSelfPermission(getApplicationContext(), READ_PHONE_STATE);
-        if((sawPermissionGranted != PackageManager.PERMISSION_GRANTED)
-                || (resPermissionGranted != PackageManager.PERMISSION_GRANTED)
-                || (rpsPermissionGranted != PackageManager.PERMISSION_GRANTED)) {
-            ActivityCompat.requestPermissions(this, new String[]{READ_EXTERNAL_STORAGE, READ_PHONE_STATE, SYSTEM_ALERT_WINDOW}, PERMISSION_REQUEST_CODE);
+        if(resPermissionGranted != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{READ_EXTERNAL_STORAGE}, RES_PERMISSION_REQUEST_CODE);
+        }
+        if(rpsPermissionGranted != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{READ_PHONE_STATE}, RPS_PERMISSION_REQUEST_CODE);
         }
     }
     private void loadAudio(){
@@ -106,7 +120,7 @@ public class MainActivity extends AppCompatActivity {
         loadAudio();
         //playAudio("https://upload.wikimedia.org/wikipedia/commons/6/6c/Grieg_Lyric_Pieces_Kobold.ogg");
         if(audioFiles != null || audioFiles.size() != 0) {
-            playAudio(audioFiles.get(0).getData());
+            //playAudio(audioFiles.get(0).getData());
         }
     }
 
@@ -134,20 +148,30 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
         switch (requestCode) {
-            case PERMISSION_REQUEST_CODE:
+            case RES_PERMISSION_REQUEST_CODE:
                 if (grantResults.length > 0) {
 
                     boolean readStorage = grantResults[0] == PackageManager.PERMISSION_GRANTED;
-                    boolean readPhone = grantResults[1] == PackageManager.PERMISSION_GRANTED;
-                    boolean saw = grantResults[2] == PackageManager.PERMISSION_GRANTED;
                     if (readStorage )
                         Toast.makeText(this, "Permission Granted", Toast.LENGTH_SHORT).show();
                     else {
 
                         Toast.makeText(this, "Permission Denied", Toast.LENGTH_LONG).show();
-                        requestPermissions(new String[]{READ_EXTERNAL_STORAGE, READ_PHONE_STATE, SYSTEM_ALERT_WINDOW}, PERMISSION_REQUEST_CODE);
                     }
                 }
+                break;
+            case RPS_PERMISSION_REQUEST_CODE:
+                if (grantResults.length > 0) {
+
+                    boolean readPhone = grantResults[0] == PackageManager.PERMISSION_GRANTED;
+                    if (readPhone )
+                        Toast.makeText(this, "Permission Granted", Toast.LENGTH_SHORT).show();
+                    else {
+
+                        Toast.makeText(this, "Permission Denied", Toast.LENGTH_LONG).show();
+                    }
+                }
+                break;
         }
     }
 }

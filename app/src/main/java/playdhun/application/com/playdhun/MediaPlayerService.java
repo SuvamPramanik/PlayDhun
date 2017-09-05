@@ -1,15 +1,21 @@
 package playdhun.application.com.playdhun;
 
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Binder;
 import android.os.IBinder;
+import android.telecom.TelecomManager;
+import android.telephony.PhoneStateListener;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import java.io.IOException;
+import java.util.ArrayList;
 
 /**
  * Created by Suvam on 8/26/2017.
@@ -23,6 +29,16 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
     //Used to pause/resume MediaPlayer
     private int resumePosition;
     private AudioManager audioManager;
+
+    //variables to handle incoming calls
+    private boolean onGoingCall = false;
+    private TelephonyManager telephonyManager;
+    private PhoneStateListener phoneStateListener;
+
+    //List of available Audio files
+    private ArrayList<Audio> audioList;
+    private int audioIndex = -1;
+    private Audio activeAudio; //an object of the currently playing audio
 
     private void initMediaPlayer(){
         mediaPlayer = new MediaPlayer();
@@ -66,6 +82,89 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
             mediaPlayer.seekTo(resumePosition);
             mediaPlayer.start();
         }
+    }
+
+    /*
+     * Register a broadcast receiver to receive events like 'Change of Audio Outputs'
+     */
+    BroadcastReceiver noisyBroadcastReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            pauseMedia();
+            //buildNotification(PlaybackStatus.PAUSED);
+        }
+    };
+
+    private void registerNoisyReceiver() {
+        IntentFilter intentFilter = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+        registerReceiver(noisyBroadcastReceiver, intentFilter);
+    }
+
+    /*
+     * Register a broadcast to receive events like 'PLAY_NEW_AUDIO'
+     */
+    BroadcastReceiver playNewAudioBroadcast = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            audioIndex = new StorageUtil(getApplicationContext()).getAudioIndex();
+            if(audioIndex != -1 && audioIndex < audioList.size()) {
+                activeAudio = audioList.get(audioIndex);
+            } else{
+                //stopMedia();
+                stopSelf();
+            }
+            stopMedia();;
+            mediaPlayer.reset();
+            initMediaPlayer();
+            //updateMetaData();
+            //buildNotification(PlaybackStatus.PLAYING);
+        }
+    };
+
+    private void registerNewAudioReceiver() {
+        IntentFilter intentFilter = new IntentFilter(MainActivity.Broadcast_PLAY_NEW_AUDIO);
+        registerReceiver(playNewAudioBroadcast, intentFilter);
+    }
+
+    /**
+     * Called by the system when the service is first created.  Do not call this method directly.
+     */
+    @Override
+    public void onCreate() {
+        super.onCreate();
+    }
+
+    /*
+         * This method callStateListener() is used to listen to the phone state
+         */
+    private void callStateListener(){
+        telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+        phoneStateListener = new PhoneStateListener(){
+            @Override
+            public void onCallStateChanged(int state, String incomingNumber) {
+                switch (state) {
+                    //if at least one call exists or the phone is ringing
+                    //pause the MediaPlayer
+                    case TelephonyManager.CALL_STATE_OFFHOOK:
+                    case TelephonyManager.CALL_STATE_RINGING:
+                        if(mediaPlayer != null){
+                            pauseMedia();
+                            onGoingCall = true;
+                        }
+                        break;
+                    case TelephonyManager.CALL_STATE_IDLE:
+                        if(mediaPlayer != null) {
+                            if(onGoingCall) {
+                                onGoingCall = false;
+                                resumeMedia();
+                            }
+                        }
+                        break;
+                }
+            }
+        };
+
+        telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE);
     }
 
     @Override
