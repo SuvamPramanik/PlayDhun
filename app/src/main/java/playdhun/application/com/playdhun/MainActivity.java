@@ -1,146 +1,210 @@
 package playdhun.application.com.playdhun;
 
-import android.app.Activity;
 import android.content.ComponentName;
-import android.content.ContentProvider;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.content.res.TypedArray;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Build;
-import android.os.IBinder;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.PersistableBundle;
 import android.provider.MediaStore;
+import android.support.design.widget.FloatingActionButton;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.support.v7.widget.Toolbar;
 import android.util.Log;
+import android.view.View;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.widget.ImageView;
 import android.widget.Toast;
 
-import java.util.ArrayList;
 
+import java.util.ArrayList;
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
 import static android.Manifest.permission.READ_PHONE_STATE;
-
 public class MainActivity extends AppCompatActivity {
 
-    //fields to take care of the permissions
     private static final int RES_PERMISSION_REQUEST_CODE = 200;
     private static final int RPS_PERMISSION_REQUEST_CODE = 201;
 
-    //fields to play audio
     public static final String Broadcast_PLAY_NEW_AUDIO = "playdhun.application.com.playdhun.PlayNewAudio";
+
     private MediaPlayerService player;
     boolean serviceBound = false;
+    ArrayList<Audio> audioList;
 
-    //to store the local audio files
-    ArrayList<Audio> audioFiles;
+    ImageView collapsingImageView;
 
-    private ServiceConnection serviceConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
-            MediaPlayerService.LocalBinder binder = (MediaPlayerService.LocalBinder) iBinder;
-            player = binder.getService();
-            serviceBound = true;
-            Toast.makeText(MainActivity.this, "Service Bound", Toast.LENGTH_SHORT).show();
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName componentName) {
-            serviceBound = false;
-        }
-    };
-
-    /*
-     * This function is used to play the media form any index
-     */
-    private void playAudio(int index) {
-        if(!serviceBound){
-            StorageUtil storageUtil = new StorageUtil(getApplicationContext());
-            storageUtil.storeAudio(audioFiles);
-            storageUtil.storeAudioIndex(index);
-            Intent intent = new Intent(this, MediaPlayerService.class);
-            startService(intent);
-            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
-        }
-        else{
-            StorageUtil storageUtil = new StorageUtil(getApplicationContext());
-            storageUtil.storeAudioIndex(index);
-            Intent intent = new Intent(Broadcast_PLAY_NEW_AUDIO);
-            sendBroadcast(intent);
-        }
-    }
-
-    private void checkForPermissions(){
-        int resPermissionGranted = ContextCompat.checkSelfPermission(getApplicationContext(), READ_EXTERNAL_STORAGE);
-        int rpsPermissionGranted = ContextCompat.checkSelfPermission(getApplicationContext(), READ_PHONE_STATE);
-        if(resPermissionGranted != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{READ_EXTERNAL_STORAGE}, RES_PERMISSION_REQUEST_CODE);
-        }
-        if(rpsPermissionGranted != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{READ_PHONE_STATE}, RPS_PERMISSION_REQUEST_CODE);
-        }
-    }
-    private void loadAudio(){
-
-        ContentResolver contentResolver = getContentResolver();
-           //table name
-           Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-           String selection = MediaStore.Audio.Media.IS_MUSIC + "!=0";
-           String sort = MediaStore.Audio.Media.TITLE + " ASC";
-           StringBuilder sb = new StringBuilder();
-           Cursor cursor = contentResolver.query(uri, null, selection, null, sort);
-           if (cursor != null && cursor.getCount() > 0) {
-               audioFiles = new ArrayList<Audio>();
-               while (cursor.moveToNext()) {
-                   String data = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.DATA));
-                   sb.append(data);
-                   String title = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.TITLE));
-                   String album = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM));
-                   String artist = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST));
-                   Audio audioFile = new Audio(data, title, album, artist);
-                   audioFiles.add(audioFile);
-               }
-               Log.d("MainActivity.java", sb.toString());
-          } else {
-               Toast.makeText(this, "Sorry, no audio file found", Toast.LENGTH_LONG).show();
-            }
-            cursor.close();
-    }
+    int imageIndex = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        collapsingImageView = (ImageView) findViewById(R.id.collapsingImageView);
+
+        loadCollapsingImage(imageIndex);
         checkForPermissions();
         loadAudio();
-        //playAudio("https://upload.wikimedia.org/wikipedia/commons/6/6c/Grieg_Lyric_Pieces_Kobold.ogg");
-        if(audioFiles != null || audioFiles.size() != 0) {
-            //playAudio(audioFiles.get(0).getData());
+        initRecyclerView();
+
+        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
+        fab.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+//                playAudio("https://upload.wikimedia.org/wikipedia/commons/6/6c/Grieg_Lyric_Pieces_Kobold.ogg");
+                //play the first audio in the ArrayList
+//                playAudio(2);
+                if (imageIndex == 4) {
+                    imageIndex = 0;
+                    loadCollapsingImage(imageIndex);
+                } else {
+                    loadCollapsingImage(++imageIndex);
+                }
+            }
+        });
+
+    }
+
+
+    private void initRecyclerView() {
+        if (audioList.size() > 0) {
+            RecyclerView recyclerView = (RecyclerView) findViewById(R.id.recyclerview);
+            RecyclerView_Adapter adapter = new RecyclerView_Adapter(audioList, getApplication());
+            recyclerView.setAdapter(adapter);
+            recyclerView.setLayoutManager(new LinearLayoutManager(this));
+            recyclerView.addOnItemTouchListener(new CustomTouchListener(this, new onItemClickListener() {
+                @Override
+                public void onClick(View view, int index) {
+                    playAudio(index);
+                }
+            }));
+
         }
     }
 
-    @Override
-    public void onSaveInstanceState(Bundle savedInstanceState) {
-        savedInstanceState.putBoolean("serviceState", serviceBound);
-        super.onSaveInstanceState(savedInstanceState);
+    private void loadCollapsingImage(int i) {
+        TypedArray array = getResources().obtainTypedArray(R.array.images);
+        collapsingImageView.setImageDrawable(array.getDrawable(i));
     }
 
     @Override
-    public void onRestoreInstanceState(Bundle restoreInstanceState) {
-        serviceBound = restoreInstanceState.getBoolean("serviceState");
-        super.onRestoreInstanceState(restoreInstanceState);
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
     }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings) {
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
+    }
+
+
+    @Override
+    public void onSaveInstanceState(Bundle outState, PersistableBundle outPersistentState) {
+        super.onSaveInstanceState(outState, outPersistentState);
+        outState.putBoolean("serviceStatus", serviceBound);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        serviceBound = savedInstanceState.getBoolean("serviceStatus");
+    }
+
+    //Binding this Client to the AudioPlayer Service
+    private ServiceConnection serviceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            // We've bound to LocalService, cast the IBinder and get LocalService instance
+            MediaPlayerService.LocalBinder binder = (MediaPlayerService.LocalBinder) service;
+            player = binder.getService();
+            serviceBound = true;
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            serviceBound = false;
+        }
+    };
+
+
+    private void playAudio(int audioIndex) {
+        //Check is service is active
+        if (!serviceBound) {
+            //Store Serializable audioList to SharedPreferences
+            StorageUtil storage = new StorageUtil(getApplicationContext());
+            storage.storeAudio(audioList);
+            storage.storeAudioIndex(audioIndex);
+
+            Intent playerIntent = new Intent(this, MediaPlayerService.class);
+            startService(playerIntent);
+            bindService(playerIntent, serviceConnection, Context.BIND_AUTO_CREATE);
+        } else {
+            //Store the new audioIndex to SharedPreferences
+            StorageUtil storage = new StorageUtil(getApplicationContext());
+            storage.storeAudioIndex(audioIndex);
+
+            //Service is active
+            //Send a broadcast to the service -> PLAY_NEW_AUDIO
+            Intent broadcastIntent = new Intent(Broadcast_PLAY_NEW_AUDIO);
+            sendBroadcast(broadcastIntent);
+        }
+    }
+
+
+    private void loadAudio() {
+        ContentResolver contentResolver = getContentResolver();
+
+        Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        String selection = MediaStore.Audio.Media.IS_MUSIC + "!= 0";
+        String sortOrder = MediaStore.Audio.Media.TITLE + " ASC";
+        Cursor cursor = contentResolver.query(uri, null, selection, null, sortOrder);
+
+        if (cursor != null && cursor.getCount() > 0) {
+            audioList = new ArrayList<>();
+            while (cursor.moveToNext()) {
+                String data = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.DATA));
+                String title = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.TITLE));
+                String album = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM));
+                String artist = cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST));
+
+                // Save to audioList
+                audioList.add(new Audio(data, title, album, artist));
+            }
+        }
+        cursor.close();
+    }
+
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if(serviceBound){
+        if (serviceBound) {
             unbindService(serviceConnection);
+            //service is active
             player.stopSelf();
         }
     }
@@ -172,6 +236,17 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 break;
+        }
+    }
+
+    private void checkForPermissions(){
+        int resPermissionGranted = ContextCompat.checkSelfPermission(getApplicationContext(), READ_EXTERNAL_STORAGE);
+        int rpsPermissionGranted = ContextCompat.checkSelfPermission(getApplicationContext(), READ_PHONE_STATE);
+        if(resPermissionGranted != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{READ_EXTERNAL_STORAGE}, RES_PERMISSION_REQUEST_CODE);
+        }
+        if(rpsPermissionGranted != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{READ_PHONE_STATE}, RPS_PERMISSION_REQUEST_CODE);
         }
     }
 }
