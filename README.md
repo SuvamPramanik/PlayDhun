@@ -1,2 +1,2 @@
 # PlayDhun
-It is a basic music player android app.
+music player android app.
